@@ -1367,6 +1367,10 @@ scene.add(overheadLight);
 let controllerSpotlight = null;
 let spotlightTarget = null;
 
+// Torch intensity settings
+const TORCH_INTENSITY_LEVELS = [1.0, 2.5, 4.0]; // Low, default, high
+let torchIntensityIndex = 1; // Start at default intensity
+
 // Function to create/recreate the spotlight
 function createSpotlight(beamWidthDegrees = 35) {
   // Remove existing spotlight if it exists
@@ -1384,7 +1388,7 @@ function createSpotlight(beamWidthDegrees = 35) {
   // Create new spotlight with configurable beam width
   controllerSpotlight = new THREE.SpotLight(
     0xffffff,        // Pure white light
-    2.5,             // Realistic underwater torch intensity
+    TORCH_INTENSITY_LEVELS[torchIntensityIndex], // Current torch intensity
     spotlightDistance, // Adjustable distance based on device
     beamWidthRadians, // Configurable beam width in radians
     0.15,            // Softer penumbra for more realistic falloff
@@ -1420,6 +1424,14 @@ function createSpotlight(beamWidthDegrees = 35) {
   controllerSpotlight.target = spotlightTarget;
 
   console.log(`Spotlight created/recreated with ${beamWidthDegrees}° beam width, ${spotlightDistance}m distance, and ${shadowMapSize}px shadows:`, controllerSpotlight);
+}
+
+// Cycle through predefined torch intensity levels
+function adjustTorchIntensity(delta) {
+  if (!controllerSpotlight) return;
+  torchIntensityIndex = (torchIntensityIndex + delta + TORCH_INTENSITY_LEVELS.length) % TORCH_INTENSITY_LEVELS.length;
+  controllerSpotlight.intensity = TORCH_INTENSITY_LEVELS[torchIntensityIndex];
+  console.log(`🔆 Torch intensity set to ${controllerSpotlight.intensity}`);
 }
 
 // Add underwater particles system - dynamically sized based on wreck
@@ -2204,41 +2216,68 @@ function checkControllerButtons() {
         buttonStates.set(debugKey, true);
       }
       
-      // Only check specific buttons for mode toggle (X and A buttons, not grips/triggers)
-      // Common Quest button mapping: 
-      // - Button[4] = X (left) or A (right) 
+      // Quest button mapping:
+      // - Button[4] = X (left) or A (right)
       // - Button[5] = Y (left) or B (right)
-      // - Button[0] = trigger (exclude)
-      // - Button[1] = grip (exclude - used for speed boost)
-      
       let modeToggleButtons = [];
+      let intensityUpButtons = [];
+      let intensityDownButtons = [];
+
       if (handedness === 'left') {
-        // Left controller: Check for X button (usually button[4] or button[5])
+        // Left controller always toggles mode
         modeToggleButtons = [4, 5];
       } else if (handedness === 'right') {
-        // Right controller: Check for A button (usually button[4] or button[5])  
-        modeToggleButtons = [4, 5];
+        if (isDiveModeEnabled) {
+          // Use A/B for torch brightness while diving
+          intensityUpButtons = [4];   // A button
+          intensityDownButtons = [5]; // B button
+        } else {
+          // In survey mode the right controller also toggles mode
+          modeToggleButtons = [4, 5];
+        }
       }
-      
-      // Check only the mode toggle buttons (not triggers or grips)
+
+      // Handle mode toggle presses
       modeToggleButtons.forEach(index => {
         if (gamepad.buttons[index]) {
           const button = gamepad.buttons[index];
-          const buttonKey = `${handedness}-${index}`;
-          const wasPressed = buttonStates.get(buttonKey) || false;
-          const isPressed = button.pressed;
-          
-          // Detect button press (not held)
-          if (isPressed && !wasPressed) {
+          const key = `${handedness}-mode-${index}`;
+          const was = buttonStates.get(key) || false;
+          const isP = button.pressed;
+          if (isP && !was) {
             console.log(`🎮 ${handedness} controller button[${index}] pressed for mode toggle!`);
-            
-            // Call toggleDiveMode directly - same as the UI toggle
             toggleDiveMode();
-            
             console.log(`🔄 Mode toggled to ${isDiveModeEnabled ? 'Dive' : 'Survey'} via ${handedness} controller button[${index}]`);
           }
-          
-          buttonStates.set(buttonKey, isPressed);
+          buttonStates.set(key, isP);
+        }
+      });
+
+      // Handle brightness increase
+      intensityUpButtons.forEach(index => {
+        if (gamepad.buttons[index]) {
+          const button = gamepad.buttons[index];
+          const key = `${handedness}-up-${index}`;
+          const was = buttonStates.get(key) || false;
+          const isP = button.pressed;
+          if (isP && !was) {
+            adjustTorchIntensity(1);
+          }
+          buttonStates.set(key, isP);
+        }
+      });
+
+      // Handle brightness decrease
+      intensityDownButtons.forEach(index => {
+        if (gamepad.buttons[index]) {
+          const button = gamepad.buttons[index];
+          const key = `${handedness}-down-${index}`;
+          const was = buttonStates.get(key) || false;
+          const isP = button.pressed;
+          if (isP && !was) {
+            adjustTorchIntensity(-1);
+          }
+          buttonStates.set(key, isP);
         }
       });
     }
